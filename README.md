@@ -1,6 +1,6 @@
 # simple-c-bundler
 
-A Rust library and CLI that combines ordinary C modules into one standalone C file. It discovers modules through local includes, qualifies private identifiers by their source paths, and converts typed `.asm` templates into C output functions.
+A Rust CLI that combines ordinary C modules into one standalone C file. It discovers modules through local includes, qualifies private identifiers by their source paths, and converts typed `.asm` templates into C output functions.
 
 ## Build and install
 
@@ -8,8 +8,11 @@ The repository pins the official Rust 1.99.0 toolchain. Cargo installs and runs 
 
 ```sh
 cargo build --locked
+cargo install --path . --locked
 cargo install --git https://github.com/uni-kakurenbo/simple-c-bundler --locked
 ```
+
+The installed `simple-c-bundler` executable works from any directory; `--root` selects the input project. The tool does not require another repository, a project configuration file, a shell script, or a runtime service.
 
 GCC is used only by the compilation integration test and by the example commands below. Set `CC` to another C compiler executable if needed.
 
@@ -71,21 +74,6 @@ If different source paths normalize to the same module name, bundling fails and 
 This generates `static void asm_load(FILE *output, int immediate)`. Template parameters use `int`, `uint`, `size`, or `string`, and `{{name}}` supplies the corresponding C argument. Repeated placeholders preserve argument order. Percent signs, quotes, backslashes, tabs, and line endings are escaped for C output. Template names, parameters, and placeholders are validated; duplicate names, unknown placeholders, and unused parameters are errors.
 
 Templates are converted ahead of time. The bundled C file has no runtime dependency on the Rust tool, its input headers, or template files.
-
-## Library
-
-```rust
-use simple_c_bundler::bundle;
-use std::path::Path;
-
-fn main() -> Result<(), String> {
-    let output = bundle::export(Path::new("examples/hello"), "demo")?;
-    println!("{}", output.bundle);
-    Ok(())
-}
-```
-
-The library also exposes dependency discovery, template conversion, C tokenization, and declaration scanning.
 
 ## Supported C
 
