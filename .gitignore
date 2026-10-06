@@ -1,0 +1,21 @@
+# Track only the tool, its documentation, and explicitly selected examples.
+/*
+!/.gitignore
+!/Cargo.toml
+!/Cargo.lock
+!/README.md
+!/rust-toolchain.toml
+!/src/
+/src/*
+!/src/*.rs
+!/tests/
+/tests/*
+!/tests/*.rs
+!/tests/fixtures/
+/tests/fixtures/*
+!/tests/fixtures/modules/
+!/examples/
+/examples/*
+!/examples/hello/
+/examples/hello/*
+!/examples/hello/src/

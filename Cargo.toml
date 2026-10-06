@@ -1,0 +1,30 @@
+[package]
+name = "simple-c-bundler"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+description = "Bundle ordinary C modules and typed assembly templates into a standalone C source"
+repository = "https://github.com/uni-kakurenbo/simple-c-bundler"
+publish = false
+include = [
+    "Cargo.toml",
+    "Cargo.lock",
+    "README.md",
+    "rust-toolchain.toml",
+    "src/*.rs",
+    "tests/*.rs",
+    "tests/fixtures/modules/**",
+    "examples/hello/src/**",
+]
+
+[dependencies]
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unused_must_use = "deny"
+
+[lints.clippy]
+undocumented_unsafe_blocks = "deny"
