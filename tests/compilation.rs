@@ -68,6 +68,11 @@ fn modular_and_bundled_sources_compile_and_preserve_template_output() {
 
     let root = &fixture.0;
     let output = bundle::export(root, "fixture").unwrap();
+    assert!(
+        !read_text(Path::new(&output.bundle))
+            .unwrap()
+            .contains("#pragma once")
+    );
     let generated = Path::new(&output.generated_root);
     let compiler = std::env::var_os("CC")
         .filter(|name| !name.is_empty())

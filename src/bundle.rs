@@ -1,4 +1,4 @@
-use crate::c_source::Scanner;
+use crate::c_source::{Scanner, directives, lex};
 use crate::modules::{Graph, Project, module_names};
 use crate::{Result, read_text, templates, write_text};
 use serde::Serialize;
@@ -31,6 +31,39 @@ struct Expander<'a> {
     system_headers: BTreeSet<String>,
 }
 
+fn strip_pragma_once(text: &str) -> Result<String> {
+    let mut stripped = String::new();
+    let mut cursor = 0;
+
+    for directive in directives(text)? {
+        let logical = directive.text.replace("\\\n", "");
+        let tokens = lex(&logical, false)?;
+        if !tokens
+            .iter()
+            .map(|token| token.text.as_str())
+            .eq(["#", "pragma", "once"])
+        {
+            continue;
+        }
+
+        let line_start = text[..directive.start]
+            .rfind('\n')
+            .map_or(0, |offset| offset + 1);
+        let start = if text[line_start..directive.start].trim().is_empty() {
+            line_start
+        } else {
+            directive.start
+        };
+
+        stripped.push_str(&text[cursor..start]);
+        cursor = directive.end;
+    }
+
+    stripped.push_str(&text[cursor..]);
+
+    Ok(stripped)
+}
+
 impl Expander<'_> {
     fn expand(&mut self, source: &str) -> Result<String> {
         let content = read_text(&self.project.source_path(source)?)?;
@@ -60,7 +93,7 @@ impl Expander<'_> {
 
         expanded.push_str(&content[cursor..]);
 
-        Ok(expanded)
+        strip_pragma_once(&expanded).map_err(|error| format!("Could not expand {source}: {error}"))
     }
 }
 

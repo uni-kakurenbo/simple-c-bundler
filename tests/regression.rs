@@ -27,7 +27,7 @@ impl Fixture {
         );
         fixture.put(
             "src/api.h",
-            "/* before guard */\n#ifndef API_H\n#define API_H\nint answer(void);\n#endif\n",
+            "/* before guard */\n#pragma once\nint answer(void);\n",
         );
         fixture.put(
             "src/api.c",
@@ -110,6 +110,44 @@ fn literals_comments_and_multiline_directives_preserve_text() {
     .unwrap();
     assert_eq!(directives.len(), 1);
     assert_eq!(directives[0].text, "#include <stdio.h>\n");
+}
+
+#[test]
+fn pragma_once_is_removed_after_expansion_without_changing_other_text() {
+    let fixture = Fixture::new();
+    fixture.put(
+        "src/main.c",
+        "#include \"api.h\"\n#include \"api.h\"\nint main(void) { return answer(); }\n",
+    );
+    fixture.put(
+        "src/api.h",
+        "  # pragma /* header */ once // guard\n#include \"detail.h\"\n#pragma pack(push, 1)\nstruct Answer { int value; };\n#pragma pack(pop)\nint answer(void);\n",
+    );
+    fixture.put("src/detail.h", "#pragma \\\n    once\n#include \"api.h\"\n");
+    fixture.put(
+        "src/api.c",
+        "#include \"api.h\"\n/* #pragma once */\nconst char *note = \"#pragma once\";\nint answer(void) { return 42; }\n",
+    );
+
+    let text = render(&fixture.project(), "fixture").unwrap().text;
+    let remaining: Vec<_> = directives(&text)
+        .unwrap()
+        .into_iter()
+        .filter(|directive| directive.text.contains("pragma"))
+        .map(|directive| directive.text)
+        .collect();
+    assert_eq!(
+        remaining,
+        ["#pragma pack(push, 1)\n", "#pragma pack(pop)\n"]
+    );
+    assert_eq!(text.matches("struct Answer { int value; };").count(), 1);
+    assert!(text.contains("/* #pragma once */"));
+    assert!(text.contains("const char *note = \"#pragma once\";"));
+    assert!(
+        read_text(&fixture.root.join("src/api.h"))
+            .unwrap()
+            .contains("once // guard")
+    );
 }
 
 #[test]

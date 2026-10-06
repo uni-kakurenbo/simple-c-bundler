@@ -1,5 +1,3 @@
-#ifndef FIXTURE_RIGHT_H
-#define FIXTURE_RIGHT_H
+#pragma once
 #include "../api.h"
 extern const Module B;
-#endif

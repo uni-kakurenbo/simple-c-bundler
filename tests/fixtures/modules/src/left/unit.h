@@ -1,6 +1,4 @@
 /* Comments before header guards are allowed. */
-#ifndef FIXTURE_LEFT_H
-#define FIXTURE_LEFT_H
+#pragma once
 #include "../api.h"
 extern const Module A;
-#endif

@@ -56,6 +56,8 @@ The entry points are `src/main.c` and `src/profiles/NAME.c`. A profile name star
 
 When a selected header has a `.c` file beside it, that implementation is included automatically. Headers without a corresponding implementation provide only declarations. An include ending in `.inc` is generated from the `.asm` file with the same path and stem. Only reachable modules and templates are included; build registration and a project configuration file are unnecessary.
 
+Headers can use `#pragma once` for modular builds. Bundling expands each reachable header once and removes its `#pragma once` directive, including an indented or continued form. Other pragmas and occurrences inside comments or string literals retain their text. Input files are unchanged.
+
 ## Private names
 
 Private functions, variables, typedef names, tags, enum constants, and macros receive a source-specific prefix. Directory separators become `__`, the `.c` extension and leading `src/` are removed, and the original identifier is appended with `__`.

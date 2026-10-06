@@ -1,6 +1,3 @@
-#ifndef APPLICATION_H
-#define APPLICATION_H
+#pragma once
 
 void greet(void);
-
-#endif
