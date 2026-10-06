@@ -121,9 +121,12 @@ fn pragma_once_is_removed_after_expansion_without_changing_other_text() {
     );
     fixture.put(
         "src/api.h",
-        "  # pragma /* header */ once // guard\n#include \"detail.h\"\n#pragma pack(push, 1)\nstruct Answer { int value; };\n#pragma pack(pop)\nint answer(void);\n",
+        "  # pragma /* header */ once // guard\n#include \"detail.h\"\n#pragma pack(push, 1) /* layout\nkept */\nstruct Answer { int value; };\n#pragma pack(pop)\nint answer(void);\n",
     );
-    fixture.put("src/detail.h", "#pragma \\\n    once\n#include \"api.h\"\n");
+    fixture.put(
+        "src/detail.h",
+        "#pragma \\\n    once /* multiline\n#include \"not-a-header.h\"\n*/\n#include \"api.h\"\n",
+    );
     fixture.put(
         "src/api.c",
         "#include \"api.h\"\n/* #pragma once */\nconst char *note = \"#pragma once\";\nint answer(void) { return 42; }\n",
@@ -138,7 +141,10 @@ fn pragma_once_is_removed_after_expansion_without_changing_other_text() {
         .collect();
     assert_eq!(
         remaining,
-        ["#pragma pack(push, 1)\n", "#pragma pack(pop)\n"]
+        [
+            "#pragma pack(push, 1) /* layout\nkept */\n",
+            "#pragma pack(pop)\n"
+        ]
     );
     assert_eq!(text.matches("struct Answer { int value; };").count(), 1);
     assert!(text.contains("/* #pragma once */"));

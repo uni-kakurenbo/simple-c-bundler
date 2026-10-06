@@ -30,6 +30,56 @@ fn advance(text: &str, offset: usize) -> usize {
     offset + character(text, offset).map_or(0, char::len_utf8)
 }
 
+fn directive_end(text: &str, start: usize) -> Result<usize> {
+    let mut i = start;
+    let mut quote = None;
+    let mut line_comment = false;
+
+    while let Some(ch) = character(text, i) {
+        if text[i..].starts_with("\\\r\n") {
+            i += 3;
+            continue;
+        }
+
+        if text[i..].starts_with("\\\n") {
+            i += 2;
+            continue;
+        }
+
+        if ch == '\n' {
+            return Ok(i + 1);
+        }
+
+        if line_comment {
+            i = advance(text, i);
+        } else if let Some(delimiter) = quote {
+            if ch == '\\' {
+                i = advance(text, i);
+            } else if ch == delimiter {
+                quote = None;
+            }
+
+            i = advance(text, i);
+        } else if text[i..].starts_with("//") {
+            line_comment = true;
+            i += 2;
+        } else if text[i..].starts_with("/*") {
+            i = text[i + 2..]
+                .find("*/")
+                .map(|end| i + 2 + end + 2)
+                .ok_or("Unterminated C comment")?;
+        } else {
+            if matches!(ch, '"' | '\'') {
+                quote = Some(ch);
+            }
+
+            i = advance(text, i);
+        }
+    }
+
+    Ok(i)
+}
+
 pub fn lex(text: &str, directives: bool) -> Result<Vec<Token>> {
     let mut tokens = Vec::new();
     let mut i = 0;
@@ -56,22 +106,7 @@ pub fn lex(text: &str, directives: bool) -> Result<Vec<Token>> {
 
         let kind;
         if directives && ch == '#' {
-            loop {
-                let Some(end) = text[i..].find('\n').map(|end| i + end) else {
-                    i = text.len();
-                    break;
-                };
-
-                let last = if end > 0 && text.as_bytes()[end - 1] == b'\r' {
-                    end.saturating_sub(2)
-                } else {
-                    end.saturating_sub(1)
-                };
-                i = end + 1;
-                if end == 0 || text.as_bytes()[last] != b'\\' {
-                    break;
-                }
-            }
+            i = directive_end(text, i)?;
             kind = Kind::Directive;
         } else {
             let mut quote = i;
