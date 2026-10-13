@@ -65,6 +65,25 @@ fn strip_pragma_once(text: &str) -> Result<String> {
 }
 
 impl Expander<'_> {
+    fn expand_generated(&mut self, content: &str) -> Result<String> {
+        let mut expanded = String::new();
+        let mut cursor = 0;
+        for directive in directives(content)? {
+            if let Some(header) = directive
+                .text
+                .trim()
+                .strip_prefix("#include <")
+                .and_then(|header| header.strip_suffix('>'))
+            {
+                self.system_headers.insert(header.to_owned());
+                expanded.push_str(&content[cursor..directive.start]);
+                cursor = directive.end;
+            }
+        }
+        expanded.push_str(&content[cursor..]);
+        Ok(expanded)
+    }
+
     fn expand(&mut self, source: &str) -> Result<String> {
         let content = read_text(&self.project.source_path(source)?)?;
         let mut expanded = String::new();
@@ -83,7 +102,7 @@ impl Expander<'_> {
                     .replace('\\', "/");
 
                 writeln!(expanded, "/* Generated from {template} */").unwrap();
-                expanded.push_str(generated);
+                expanded.push_str(&self.expand_generated(generated)?);
             } else if self.seen.insert(include.name.clone()) {
                 let header = self.expand(&include.name)?;
                 writeln!(self.headers, "\n/* ===== {} ===== */", include.name).unwrap();

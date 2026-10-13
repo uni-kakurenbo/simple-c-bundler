@@ -131,7 +131,8 @@ pub fn convert(text: &str) -> Result<String> {
         return Err("No templates".into());
     }
 
-    let mut code = String::new();
+    // stdio.h declares FILE, size_t, fprintf and fputs used by generated functions.
+    let mut code = String::from("#include <stdio.h>\n\n");
     for block in blocks {
         if block.lines.is_empty() {
             return Err(format!("Empty template: {}", block.name));

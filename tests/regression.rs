@@ -231,6 +231,7 @@ fn template_types_and_repeated_placeholders_keep_argument_order() {
     assert_eq!(
         code,
         concat!(
+            "#include <stdio.h>\n\n",
             "static void asm_show(FILE *output, int n, unsigned u, size_t size, const char * text)\n",
             "{\n",
             "    fprintf(output,\n",

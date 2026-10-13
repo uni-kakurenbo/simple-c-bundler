@@ -77,6 +77,8 @@ This generates `static void asm_load(FILE *output, int immediate)`. Template par
 
 Templates are converted ahead of time. The bundled C file has no runtime dependency on the Rust tool, its input headers, or template files.
 
+Each generated `.inc` includes `<stdio.h>` for `FILE`, `size_t`, `fprintf`, and `fputs`, so callers and editor tooling do not need to supply it separately. Bundling collects these system includes at the top of the output and emits each header once, together with includes from the C sources.
+
 ## Supported C
 
 The scanner handles ordinary C declarations and distinguishes structure members from other identifiers. It preserves untouched text using UTF-8 byte offsets. Input may have a UTF-8 BOM or CRLF line endings; output is BOM-free UTF-8 with LF line endings.

@@ -133,3 +133,64 @@ fn modular_and_bundled_sources_compile_and_preserve_template_output() {
         );
     }
 }
+
+#[test]
+fn templates_supply_their_standard_headers_in_modular_and_bundled_sources() {
+    let fixture = Fixture::new();
+    fixture.put("src/plain.asm", "@plain\nplain\n");
+    fixture.put(
+        "src/message.asm",
+        "@show signed_value:int unsigned_value:uint length:size text:string\n{{signed_value}} {{unsigned_value}} {{length}} {{text}}\n",
+    );
+    // This declaration follows the template's stdio.h in the modular source.
+    // Bundling must move that system header ahead of expanded project headers.
+    fixture.put("src/output.h", "typedef FILE Output;\n");
+    fixture.put(
+        "src/main.c",
+        concat!(
+            "#include \"plain.inc\"\n#include \"message.inc\"\n#include \"output.h\"\n",
+            "int main(void) {\n",
+            "    Output *output = stdout;\n",
+            "    asm_plain(output);\n",
+            "    asm_show(output, -1, 2, 3, \"text\");\n",
+            "    return 0;\n}\n",
+        ),
+    );
+    fixture.put("src/profiles/fixture.c", "int fixture_profile;\n");
+    let output = bundle::export(&fixture.0, "fixture").unwrap();
+    let bundled = read_text(Path::new(&output.bundle)).unwrap();
+    assert_eq!(bundled.matches("#include <stdio.h>").count(), 1);
+    assert!(
+        read_text(&Path::new(&output.generated_root).join("message.inc"))
+            .unwrap()
+            .starts_with("#include <stdio.h>\n")
+    );
+
+    let compiler = std::env::var_os("CC")
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "gcc".into());
+    let flags = ["-std=c11", "-Wall", "-Wextra", "-Wpedantic", "-Werror"];
+    let extension = if cfg!(windows) { "exe" } else { "bin" };
+    for (name, source) in [
+        ("modular", fixture.0.join("src/main.c")),
+        ("bundled", PathBuf::from(&output.bundle)),
+    ] {
+        let executable = fixture.0.join(format!("{name}.{extension}"));
+        checked(
+            Command::new(&compiler)
+                .current_dir(&fixture.0)
+                .args(flags)
+                .arg(format!("-I{}", output.generated_root))
+                .arg(source)
+                .arg("-o")
+                .arg(&executable),
+        );
+        let result = checked(&mut Command::new(executable));
+        assert_eq!(
+            String::from_utf8(result.stdout)
+                .unwrap()
+                .replace("\r\n", "\n"),
+            "plain\n-1 2 3 text\n"
+        );
+    }
+}
