@@ -234,13 +234,16 @@ fn template_types_and_repeated_placeholders_keep_argument_order() {
             "#include <stdio.h>\n\n",
             "static void asm_show(FILE *output, int n, unsigned u, size_t size, const char * text)\n",
             "{\n",
-            "    fprintf(output,\n",
-            "        \"\\t%%eax \\\"quote\\\" path\\\\file %s %d %d %u %zu %%s\\n\", text, n, n, u, size);\n",
+            "    fprintf(\n",
+            "        output,\n",
+            "        \"\\t%%eax \\\"quote\\\" path\\\\file %s %d %d %u %zu %%s\\n\",\n",
+            "        text, n, n, u, size\n",
+            "    );\n",
             "}\n\n",
         )
     );
     let plain = templates::convert("@plain\n%eax\n").unwrap();
-    assert!(plain.contains("fputs(\n        \"%eax\\n\", output)"));
+    assert!(plain.contains("fputs(\n        \"%eax\\n\",\n        output\n    );"));
 }
 
 #[test]

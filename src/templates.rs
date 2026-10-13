@@ -181,11 +181,17 @@ pub fn convert(text: &str) -> Result<String> {
         }
 
         if formatted {
-            code.push_str("    fprintf(output,\n");
-            writeln!(code, "{}, {});", literals.join("\n"), arguments.join(", ")).unwrap();
+            code.push_str("    fprintf(\n        output,\n");
+            writeln!(
+                code,
+                "{},\n        {}\n    );",
+                literals.join("\n"),
+                arguments.join(", ")
+            )
+            .unwrap();
         } else {
             code.push_str("    fputs(\n");
-            writeln!(code, "{}, output);", literals.join("\n")).unwrap();
+            writeln!(code, "{},\n        output\n    );", literals.join("\n")).unwrap();
         }
 
         code.push_str("}\n\n");
