@@ -122,7 +122,7 @@ pub fn convert(text: &str) -> Result<String> {
             });
         } else if let Some(block) = blocks.last_mut() {
             block.lines.push(line);
-        } else {
+        } else if !line.trim_start().is_empty() && !line.trim_start().starts_with('#') {
             return Err("Assembly before first template".into());
         }
     }

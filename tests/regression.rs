@@ -247,10 +247,31 @@ fn template_types_and_repeated_placeholders_keep_argument_order() {
 }
 
 #[test]
+fn template_preamble_comments_and_blank_lines_are_discarded() {
+    let body = "@show value:int\n# emitted comment\n{{value}}\n";
+
+    for preamble in [
+        "# file description\n",
+        "\n \t\n  # 日本語 {{unused}}\n\t# @not_a_template %eax\n\n",
+        "# Windows line endings\r\n\r\n",
+    ] {
+        assert_eq!(
+            templates::convert(&format!("{preamble}{body}")).unwrap(),
+            templates::convert(body).unwrap()
+        );
+    }
+}
+
+#[test]
 fn invalid_templates_are_rejected() {
     for (text, expected) in [
         ("", "No templates"),
+        ("\n# comments only\n", "No templates"),
         ("assembly", "Assembly before"),
+        (
+            "# description\n\n movl $1, %eax\n@show\nbody",
+            "Assembly before",
+        ),
         ("@", "Invalid template"),
         ("@bad", "Empty template"),
         ("@bad n:int\n{{missing}}", "Unknown placeholder"),

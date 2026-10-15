@@ -77,6 +77,8 @@ This generates `static void asm_load(FILE *output, int immediate)`. Template par
 
 Templates are converted ahead of time. The bundled C file has no runtime dependency on the Rust tool, its input headers, or template files.
 
+Before the first `@` declaration, blank lines and lines whose first non-whitespace character is `#` are ignored. These file-level comments are omitted from both generated C and assembly. Comments after a declaration remain part of that template's output. Assembly instructions before the first declaration are errors.
+
 Each generated `.inc` includes `<stdio.h>` for `FILE`, `size_t`, `fprintf`, and `fputs`, so callers and editor tooling do not need to supply it separately. Bundling collects these system includes at the top of the output and emits each header once, together with includes from the C sources.
 
 ## Supported C
