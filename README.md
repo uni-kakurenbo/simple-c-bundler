@@ -1,98 +1,121 @@
-# simple-c-bundler
+# c-source-tools
 
-A Rust CLI that combines ordinary C modules into one standalone C file. It discovers modules through local includes, qualifies private identifiers by their source paths, and converts typed `.asm` templates into C output functions.
+Generate C output functions, compile C assets to assembly, and combine ordinary C modules into a standalone C source. The CLI and Rust API use the same implementation. No WSLC, container, or execution-platform library is required.
 
-## Build and install
+## Install and try
 
-The repository pins the official Rust 1.99.0 toolchain. Cargo installs and runs the CLI directly.
+The repository pins Rust 1.99.0. Install the CLI from this checkout:
 
 ```sh
-cargo build --locked
 cargo install --path . --locked
-cargo install --git https://github.com/uni-kakurenbo/simple-c-bundler --locked
+c-source-tools --help
+c-source-tools bundle --root examples/hello --entry src/main.c --entry src/profiles/demo.c --output dist/hello.c
+gcc -std=c11 -Wall -Wextra -Wpedantic -Werror examples/hello/dist/hello.c -o examples/hello/build/hello
 ```
 
-The installed `simple-c-bundler` executable works from any directory; `--root` selects the input project. The tool does not require another repository, a project configuration file, a shell script, or a runtime service.
+Create the executable output directory before invoking GCC, and use an `.exe` extension on Windows. The program prints `Hello, world!`.
 
-GCC is used only by the compilation integration test and by the example commands below. Set `CC` to another C compiler executable if needed.
-
-## Try the example
-
-```sh
-cargo run --locked -- bundle --root examples/hello --profile demo
-gcc -std=c11 -Wall -Wextra -Wpedantic -Werror examples/hello/dist/demo.c -o examples/hello/build/hello
-./examples/hello/build/hello
-```
-
-The executable prints `Hello, world!`. On Windows, use an output path ending in `.exe` when compiling the example.
+Entry points are explicit: neither `main.c` nor a profile directory is implicit. Local includes discover companion `.c` implementations. Only reachable modules and generated includes enter the bundle. The resulting C source needs neither this tool nor the original project to compile or run.
 
 ## Commands
 
 ```text
-simple-c-bundler bundle   --root DIRECTORY --profile NAME
-simple-c-bundler resolve  --root DIRECTORY --profile NAME
-simple-c-bundler template FILE
+c-source-tools bundle --root DIR --entry FILE [--entry FILE...] --output FILE [--config FILE] [--compiler PROGRAM]
+c-source-tools resolve --root DIR --entry FILE [--entry FILE...] [--config FILE]
+c-source-tools generate --root DIR [--config FILE] [--compiler PROGRAM]
+c-source-tools template FILE
 ```
 
-`bundle` writes `dist/NAME.c` and generated template headers under `build/generated/NAME/`. It returns a JSON manifest containing the output paths and selected source and template files. Input validation finishes before outputs are written.
+`bundle` prepares reachable generated includes and writes the standalone C file. `generate` prepares all declared assets and templates without parsing the C composition roots. `resolve` prints the graph without compiling or writing files. `template` converts a single typed template on stdout. Other successful commands return JSON manifests. Diagnostics go to stderr; failures return exit code 1.
 
-`resolve` prints the dependency graph as JSON without writing files. `template` converts one template to C and writes it to standard output. Diagnostics go to standard error, and errors return exit code 1.
+`--root` defaults to the working directory. Configuration paths are relative to the root. An explicit missing configuration is an error. Otherwise `c-source-tools.json` is optional. `--compiler` overrides the program of all assembly recipes; compiler arguments remain ordinary GCC arguments.
 
-## Project layout
+## Configuration
 
-Each input project has a `src/` directory and one or more composition roots:
+Without configuration, includes and templates are searched under `src/`, and generated headers go under `build/generated/include/`. Supply other include and template directories for a different project layout.
 
-```text
-src/
-  main.c
-  library.h
-  library.c
-  message.asm
-  profiles/
-    demo.c
+```json
+{
+  "includeDirs": ["src", "include"],
+  "templateDirs": ["src"],
+  "generatedRoot": "build/generated/include",
+  "assemblies": [
+    {
+      "source": "src/runtime/image.c",
+      "include": "src/runtime/embedded.h",
+      "function": "EmitRuntime",
+      "output": "build/generated/runtime/runtime.s",
+      "flags": ["-std=c11", "-O2", "-Isrc"],
+      "compiler": {
+        "program": "gcc",
+        "arguments": [],
+        "environment": {},
+        "target": "x86_64-linux-gnu"
+      }
+    }
+  ]
+}
 ```
 
-The entry points are `src/main.c` and `src/profiles/NAME.c`. A profile name starts with a lowercase ASCII letter and contains only lowercase ASCII letters, digits, or underscores. Local includes are resolved relative to the including file and then relative to `src/`.
+`include` is the logical project-relative header name. It may be registered before the file exists; it is never written into the source directory. The example writes `build/generated/include/src/runtime/embedded.h`. For a modular build, add generated include roots such as `-Ibuild/generated/include/src` alongside `-Isrc`. A source using a local include may also need its corresponding generated source directory on the include path.
 
-When a selected header has a `.c` file beside it, that implementation is included automatically. Headers without a corresponding implementation provide only declarations. An include ending in `.inc` is generated from the `.asm` file with the same path and stem. Only reachable modules and templates are included; build registration and a project configuration file are unnecessary.
+`output` names the assembly file. Adjacent `.json` metadata records the recipe, compiler identity, input hashes, and assembly hash; `.lock` serializes concurrent generation of the same artifact. Both assembly and generated include output belong in dedicated build directories. `generate` removes obsolete `.h` and `.inc` files only inside its generated include directory, after preparing all inputs successfully. Keep handwritten files outside that directory.
 
-Headers can use `#pragma once` for modular builds. Bundling expands each reachable header once and removes its `#pragma once` directive, including an indented or continued form. Other pragmas and occurrences inside comments or string literals retain their text. Input files are unchanged.
+A recipe invokes a configurable GCC-compatible executable with `-S`; it does not run target code. Its `-dumpmachine` result must match `target`. Use a native GCC when it targets the desired environment, a cross GCC otherwise, or an external wrapper such as `wslc-gcc`. All compiler source and output arguments are project-relative, with forward slashes.
 
-## Private names
+GCC `-MMD` dependencies track transitive project headers, including C files included into a translation unit. Changes to those inputs, recipe settings, configured compiler environment, target/version identity, or the cached assembly invalidate the cache. Compiler identity is queried even on a cache hit. Pin the toolchain environment or clear cached assembly metadata after changing its system headers independently. Artifact-affecting environment variables belong in `compiler.environment`.
 
-Private functions, variables, typedef names, tags, enum constants, and macros receive a source-specific prefix. Directory separators become `__`, the `.c` extension and leading `src/` are removed, and the original identifier is appended with `__`.
+## Rust API and crate boundaries
 
-For example, `value` in `src/aaa/bb_b/ccc.c` becomes `aaa__bb_b__ccc__value`. Underscores already present in file and directory names are preserved. Other characters that are not ASCII letters or digits become underscores.
+```rust,no_run
+use c_source_tools::Build;
+use std::path::Path;
 
-If different source paths normalize to the same module name, bundling fails and reports both paths and the conflicting name. No numeric suffix is added. Public identifiers, structure members, string literals, and comments retain their text. Each module's generated comment records the private identifier mapping.
+let project = Build::new(Path::new("project")).unwrap();
+let entries = vec!["src/main.c".into(), "src/composition.c".into()];
+let result = project.bundle(&entries, Path::new("dist/program.c")).unwrap();
+println!("{}", result.bundle);
+```
 
-## Typed templates
+Use `Build::with_settings` for declared C assets or a different layout. `bundle` includes generation; no separate planning or compiler trait implementation is required. `Build.environment` can supply inherited process context, such as a session connection, without changing global environment variables. Semantic compiler configuration belongs in the recipe.
+
+| Crate | Responsibility | Dependencies on execution environments |
+| --- | --- | --- |
+| `c-source-bundle` | C scanner, module graph, identifier qualification, header expansion | None |
+| `c-source-emit` | Typed templates and fixed-byte C output functions | None |
+| `c-source-tools` | Compiler invocation, dependency cache, generated includes, publication, CLI | External compiler command only |
+
+The bundle crate accepts generic registered generated includes. It does not interpret `.asm` or compiler recipes. The emit crate transforms supplied data without starting processes or choosing output directories. The facade discovers templates and connects these pieces.
+
+## Names and supported C
+
+Private functions, variables, types, tags, enum constants, and macros receive stable source-derived prefixes. Structure members, public names, strings, and comments keep their meaning. Paths that normalize to the same module prefix are an error.
+
+This is not a general C preprocessor. Local includes must be unconditional except for ordinary header guards. Conditional includes, macro-generated declarations, and unsupported compiler-specific declarations produce diagnostics. Source paths and symlinks must stay within the project root. Generated includes are self-contained leaves and may include standard headers.
+
+## Typed templates and fixed text
 
 ```asm
-@load immediate:int
-    movl ${{immediate}}, %eax
+@load value:int
+    movl ${{value}}, %eax
 ```
 
-This generates `static void asm_load(FILE *output, int immediate)`. Template parameters use `int`, `uint`, `size`, or `string`, and `{{name}}` supplies the corresponding C argument. Repeated placeholders preserve argument order. Percent signs, quotes, backslashes, tabs, and line endings are escaped for C output. Template names, parameters, and placeholders are validated; duplicate names, unknown placeholders, and unused parameters are errors.
+This declares `static void asm_load(FILE *output, int value)`. Parameter types are `int`, `uint`, `size`, and `string`. Repeated placeholders retain their order; unused parameters, duplicate names, and unknown placeholders are errors. File-level blank lines and comments beginning with `#` before the first declaration are omitted. Templates include their own `<stdio.h>` declarations.
 
-Templates are converted ahead of time. The bundled C file has no runtime dependency on the Rust tool, its input headers, or template files.
+`c_source_emit::literal::function(name, bytes)` creates a C function that writes fixed bytes with `fwrite`. It handles NUL and non-UTF-8 bytes and splits long data below C11's minimum literal-size limit. Templates and fixed text share C escaping. The writer does not hide FILE errors; callers can check `ferror` according to their own output policy.
 
-Before the first `@` declaration, blank lines and lines whose first non-whitespace character is `#` are ignored. These file-level comments are omitted from both generated C and assembly. Comments after a declaration remain part of that template's output. Assembly instructions before the first declaration are errors.
-
-Each generated `.inc` includes `<stdio.h>` for `FILE`, `size_t`, `fprintf`, and `fputs`, so callers and editor tooling do not need to supply it separately. Bundling collects these system includes at the top of the output and emits each header once, together with includes from the C sources.
-
-## Supported C
-
-The scanner handles ordinary C declarations and distinguishes structure members from other identifiers. It preserves untouched text using UTF-8 byte offsets. Input may have a UTF-8 BOM or CRLF line endings; output is BOM-free UTF-8 with LF line endings.
-
-This tool does not run a general C preprocessor. Local includes must be unconditional except for ordinary header guards. Conditional includes, macro-generated declarations, and unsupported compiler-specific declaration syntax produce diagnostics. Source paths and symlinks must remain inside the input project's `src/` directory.
-
-## Tests
+## Verification
 
 ```sh
-cargo test --locked
+cargo test --locked --workspace
 cargo fmt --all -- --check
-cargo clippy --locked --all-targets -- -D warnings
+cargo clippy --locked --workspace --all-targets -- -D warnings
 ```
 
-Tests use synthetic C modules and templates. The GCC integration test compiles both the modular and bundled forms, then compares their output. It covers duplicate private names in separate modules, generated headers with identical basenames, function pointers, member names, and template escaping.
+Tests use synthetic modules and templates. GCC integration tests compile modular and standalone forms and compare output. Generation tests cover arbitrary entry points, escaped dependency paths, transitive header changes, cache corruption, unreachable C assets, binary data, and large fixed emitters. Set `CC` to another host GCC-compatible executable for compilation tests. No consuming project or WSLC installation is required by these tests.
+
+## Install from Git
+
+```sh
+cargo install --git https://github.com/uni-kakurenbo/c-source-tools --locked
+```

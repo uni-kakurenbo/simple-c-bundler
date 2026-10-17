@@ -1,7 +1,7 @@
-use simple_c_bundler::bundle::{export, render};
-use simple_c_bundler::c_source::{Scanner, directives};
-use simple_c_bundler::modules::{Project, module_names};
-use simple_c_bundler::{read_text, templates, write_text};
+use c_source_bundle::c_source::{Scanner, directives};
+use c_source_bundle::modules::module_names;
+use c_source_tools::Build as Project;
+use c_source_tools::{read_text, templates, write_text};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -16,7 +16,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = std::env::temp_dir().join(format!(
-            "simple-c-bundler-test-{}-{} 日本語",
+            "c-source-tools-test-{}-{} 日本語",
             std::process::id(),
             NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed)
         ));
@@ -132,7 +132,7 @@ fn pragma_once_is_removed_after_expansion_without_changing_other_text() {
         "#include \"api.h\"\n/* #pragma once */\nconst char *note = \"#pragma once\";\nint answer(void) { return 42; }\n",
     );
 
-    let text = render(&fixture.project(), "fixture").unwrap().text;
+    let text = fixture.project().render(&entries("fixture")).unwrap().text;
     let remaining: Vec<_> = directives(&text)
         .unwrap()
         .into_iter()
@@ -309,7 +309,7 @@ fn discovery_handles_cycles_fallbacks_and_unregistered_modules() {
         "#include \"extra.h\"\nint extra(void) { return 1; }\n",
     );
     fixture.put("src/unused.c", "#error Unreachable invalid C\n");
-    let graph = fixture.project().resolve("fixture").unwrap();
+    let graph = fixture.project().resolve(&entries("fixture")).unwrap();
     assert_eq!(
         graph.sources,
         [
@@ -323,7 +323,7 @@ fn discovery_handles_cycles_fallbacks_and_unregistered_modules() {
 }
 
 #[test]
-fn include_and_profile_errors_are_explicit() {
+fn include_and_entry_errors_are_explicit() {
     let fixture = Fixture::new();
     for (name, text, expected) in [
         (
@@ -340,7 +340,7 @@ fn include_and_profile_errors_are_explicit() {
         (
             "src/main.c",
             "#include \"../../outside.h\"\n",
-            "Source outside src/",
+            "Source outside project",
         ),
         ("src/main.c", "#include \"api.h\"\n", ""),
         (
@@ -351,23 +351,23 @@ fn include_and_profile_errors_are_explicit() {
     ] {
         fixture.put(name, text);
         if !expected.is_empty() {
-            let error = fixture.project().resolve("fixture").unwrap_err();
+            let error = fixture.project().resolve(&entries("fixture")).unwrap_err();
             assert!(error.contains(expected), "{error}");
         }
     }
     assert!(
         fixture
             .project()
-            .resolve("../escape")
+            .resolve(&["../escape.c".into()])
             .unwrap_err()
-            .contains("Invalid profile")
+            .contains("Source outside project")
     );
     assert!(
         fixture
             .project()
-            .resolve("missing")
+            .resolve(&["missing.c".into()])
             .unwrap_err()
-            .contains("Unknown profile")
+            .contains("Unknown C entry point")
     );
 }
 
@@ -378,7 +378,7 @@ fn utf8_bom_and_crlf_produce_the_same_bundle() {
         "src/api.c",
         "/* 日本語 */\n#include \"api.h\"\nint answer(void) { return 42; }\n",
     );
-    let first = render(&fixture.project(), "fixture").unwrap().text;
+    let first = fixture.project().render(&entries("fixture")).unwrap().text;
     for source in [
         "src/main.c",
         "src/api.h",
@@ -390,7 +390,7 @@ fn utf8_bom_and_crlf_produce_the_same_bundle() {
         fs::write(path, format!("\u{feff}{}", text.replace('\n', "\r\n"))).unwrap();
     }
 
-    let second = render(&fixture.project(), "fixture").unwrap().text;
+    let second = fixture.project().render(&entries("fixture")).unwrap().text;
     assert_eq!(first, second);
     assert!(second.contains("/* 日本語 */"));
     assert!(!second.contains('\r'));
@@ -399,7 +399,10 @@ fn utf8_bom_and_crlf_produce_the_same_bundle() {
 #[test]
 fn failed_validation_preserves_previous_outputs() {
     let fixture = Fixture::new();
-    let output = export(&fixture.root, "fixture").unwrap();
+    let output = fixture
+        .project()
+        .bundle(&entries("fixture"), Path::new("dist/fixture.c"))
+        .unwrap();
     let original = read_text(Path::new(&output.bundle)).unwrap();
     fixture.put(
         "src/api.c",
@@ -407,7 +410,9 @@ fn failed_validation_preserves_previous_outputs() {
     );
     fixture.put("src/bad.asm", "@bad n:int\n{{missing}}\n");
     assert!(
-        export(&fixture.root, "fixture")
+        fixture
+            .project()
+            .bundle(&entries("fixture"), Path::new("dist/fixture.c"))
             .unwrap_err()
             .contains("Unknown placeholder")
     );
@@ -429,9 +434,12 @@ fn cli_rejects_name_collisions_without_overwriting_outputs() {
     );
     fixture.put("src/message.asm", "@show\noriginal\n");
 
-    let output = export(&fixture.root, "fixture").unwrap();
+    let output = fixture
+        .project()
+        .bundle(&entries("fixture"), Path::new("dist/fixture.c"))
+        .unwrap();
     let bundle = Path::new(&output.bundle);
-    let generated = Path::new(&output.generated_root).join("message.inc");
+    let generated = Path::new(&output.generated_root).join("src/message.inc");
     let original_bundle = read_text(bundle).unwrap();
     let original_generated = read_text(&generated).unwrap();
 
@@ -445,12 +453,19 @@ fn cli_rejects_name_collisions_without_overwriting_outputs() {
     );
     fixture.put("src/message.asm", "@show\nupdated\n");
 
-    let failed = Command::new(env!("CARGO_BIN_EXE_simple-c-bundler"))
+    let failed = Command::new(env!("CARGO_BIN_EXE_c-source-tools"))
         .current_dir(std::env::temp_dir())
         .arg("bundle")
         .arg("--root")
         .arg(&fixture.root)
-        .args(["--profile", "fixture"])
+        .args([
+            "--entry",
+            "src/main.c",
+            "--entry",
+            "src/profiles/fixture.c",
+            "--output",
+            "dist/fixture.c",
+        ])
         .output()
         .unwrap();
 
@@ -468,13 +483,18 @@ fn cli_rejects_name_collisions_without_overwriting_outputs() {
 fn cli_manifest_paths_and_diagnostics_work_from_another_directory() {
     let fixture = Fixture::new();
     let command = |action: &str, profile: &str| {
-        Command::new(env!("CARGO_BIN_EXE_simple-c-bundler"))
+        Command::new(env!("CARGO_BIN_EXE_c-source-tools"))
             .current_dir(std::env::temp_dir())
             .arg(action)
             .arg("--root")
             .arg(&fixture.root)
-            .arg("--profile")
-            .arg(profile)
+            .args(["--entry", "src/main.c", "--entry"])
+            .arg(if profile == "fixture" {
+                "src/profiles/fixture.c"
+            } else {
+                "../escape.c"
+            })
+            .args(["--output", "dist/fixture.c"])
             .output()
             .unwrap()
     };
@@ -492,7 +512,7 @@ fn cli_manifest_paths_and_diagnostics_work_from_another_directory() {
         manifest["generatedRoot"]
             .as_str()
             .unwrap()
-            .ends_with("fixture")
+            .ends_with("include")
     );
     let bad = command("bundle", "../escape");
     assert_eq!(bad.status.code(), Some(1));
@@ -500,6 +520,10 @@ fn cli_manifest_paths_and_diagnostics_work_from_another_directory() {
     assert!(
         String::from_utf8(bad.stderr)
             .unwrap()
-            .contains("Invalid profile")
+            .contains("Source outside project")
     );
+}
+
+fn entries(name: &str) -> Vec<String> {
+    vec!["src/main.c".into(), format!("src/profiles/{name}.c")]
 }

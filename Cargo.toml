@@ -1,30 +1,40 @@
-[package]
-name = "simple-c-bundler"
+[workspace]
+members = ["crates/c-source-bundle", "crates/c-source-emit"]
+resolver = "3"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
-description = "Bundle ordinary C modules and typed assembly templates into a standalone C source"
-repository = "https://github.com/uni-kakurenbo/simple-c-bundler"
 publish = false
-include = [
-    "Cargo.toml",
-    "Cargo.lock",
-    "README.md",
-    "rust-toolchain.toml",
-    "src/*.rs",
-    "tests/*.rs",
-    "tests/fixtures/modules/**",
-    "examples/hello/src/**",
-]
+repository = "https://github.com/uni-kakurenbo/c-source-tools"
 
-[dependencies]
+[workspace.dependencies]
 regex = "1"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 
-[lints.rust]
+[workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
 unused_must_use = "deny"
 
-[lints.clippy]
+[workspace.lints.clippy]
 undocumented_unsafe_blocks = "deny"
+
+[package]
+name = "c-source-tools"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+description = "Generate C emitters and bundle ordinary C modules using a configurable compiler"
+
+[lints]
+workspace = true
+
+[dependencies]
+c-source-bundle = { path = "crates/c-source-bundle" }
+c-source-emit = { path = "crates/c-source-emit" }
+serde.workspace = true
+serde_json = "1"
+sha2 = "0.10"

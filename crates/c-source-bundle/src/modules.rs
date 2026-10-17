@@ -16,13 +16,16 @@ pub struct Include {
 #[derive(Debug, Serialize)]
 pub struct Graph {
     pub sources: Vec<String>,
-    pub templates: BTreeSet<String>,
+    pub generated: BTreeSet<String>,
     pub includes: BTreeMap<String, Vec<Include>>,
 }
 
+#[derive(Clone)]
 pub struct Project {
     pub root: PathBuf,
-    canonical_src: PathBuf,
+    canonical_root: PathBuf,
+    pub include_dirs: Vec<String>,
+    pub generated: BTreeSet<String>,
 }
 
 fn normalize(path: &Path) -> PathBuf {
@@ -40,43 +43,37 @@ fn normalize(path: &Path) -> PathBuf {
     result
 }
 
-pub fn valid_profile(name: &str) -> bool {
-    let mut chars = name.chars();
-    chars.next().is_some_and(|c| c.is_ascii_lowercase())
-        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
-}
-
 impl Project {
     pub fn new(root: &Path) -> Result<Self> {
         let root = std::path::absolute(root).map_err(|e| e.to_string())?;
         let root = normalize(&root);
 
-        let canonical_src = root
-            .join("src")
+        let canonical_root = root
             .canonicalize()
-            .map_err(|e| format!("{}: {e}", root.join("src").display()))?;
-
+            .map_err(|e| format!("{}: {e}", root.display()))?;
         Ok(Self {
             root,
-            canonical_src,
+            canonical_root,
+            include_dirs: vec!["src".into()],
+            generated: BTreeSet::new(),
         })
     }
 
     pub fn source_path(&self, relative: &str) -> Result<PathBuf> {
         let relative = relative.replace('\\', "/");
         let path = normalize(&self.root.join(&relative));
-        if !path.starts_with(self.root.join("src")) {
-            return Err(format!("Source outside src/: {relative}"));
+        if !path.starts_with(self.root.clone()) {
+            return Err(format!("Source outside project: {relative}"));
         }
 
-        // Check the nearest existing ancestor too, so symlinks cannot escape src/.
+        // Check the nearest existing ancestor too, so symlinks cannot escape the project.
         let existing = path
             .ancestors()
             .find(|p| p.exists())
-            .ok_or_else(|| format!("Source outside src/: {relative}"))?;
+            .ok_or_else(|| format!("Source outside project: {relative}"))?;
         let canonical = existing.canonicalize().map_err(|e| e.to_string())?;
-        if !canonical.starts_with(&self.canonical_src) {
-            return Err(format!("Source outside src/: {relative}"));
+        if !canonical.starts_with(&self.canonical_root) {
+            return Err(format!("Source outside project: {relative}"));
         }
 
         Ok(path)
@@ -133,19 +130,21 @@ impl Project {
             } else if let Some(found) = LOCAL.captures(line) {
                 let name = found[1].replace('\\', "/");
                 let parent = Path::new(source).parent().unwrap();
-                let candidates = [parent.join(&name), Path::new("src").join(&name)];
+                let candidates = std::iter::once(parent.join(&name)).chain(
+                    self.include_dirs
+                        .iter()
+                        .map(|dir| Path::new(dir).join(&name)),
+                );
                 let mut resolved = None;
 
                 for candidate in candidates {
                     let path = self.source_path(&candidate.to_string_lossy())?;
-                    if path.is_file()
-                        || (name.ends_with(".inc") && path.with_extension("asm").is_file())
-                    {
-                        // Validate the template path as well if the .inc does not exist yet.
-                        if name.ends_with(".inc") {
-                            self.source_path(&candidate.with_extension("asm").to_string_lossy())?;
-                        }
-
+                    let logical = path
+                        .strip_prefix(&self.root)
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    if path.is_file() || self.generated.contains(&logical) {
                         let relative = path
                             .strip_prefix(&self.root)
                             .unwrap()
@@ -175,25 +174,23 @@ impl Project {
         Ok(includes)
     }
 
-    pub fn resolve(&self, profile: &str) -> Result<Graph> {
-        if !valid_profile(profile) {
-            return Err(format!("Invalid profile: {profile}"));
+    pub fn resolve(&self, entries: &[String]) -> Result<Graph> {
+        if entries.is_empty() {
+            return Err("At least one C entry point is required".into());
         }
-
-        let entry = format!("src/profiles/{profile}.c");
-        if !self.source_path(&entry)?.is_file() {
-            return Err(format!("Unknown profile: {entry}"));
-        }
-
         let mut graph = Graph {
             sources: Vec::new(),
-            templates: BTreeSet::new(),
+            generated: BTreeSet::new(),
             includes: BTreeMap::new(),
         };
 
         let mut seen = BTreeSet::new();
-        self.visit("src/main.c", &mut graph, &mut seen)?;
-        self.visit(&entry, &mut graph, &mut seen)?;
+        for entry in entries {
+            if !entry.ends_with(".c") || !self.source_path(entry)?.is_file() {
+                return Err(format!("Unknown C entry point: {entry}"));
+            }
+            self.visit(entry, &mut graph, &mut seen)?;
+        }
 
         Ok(graph)
     }
@@ -214,8 +211,8 @@ impl Project {
                 continue;
             }
 
-            if include.name.ends_with(".inc") {
-                graph.templates.insert(include.name);
+            if self.generated.contains(&include.name) {
+                graph.generated.insert(include.name);
                 continue;
             }
 

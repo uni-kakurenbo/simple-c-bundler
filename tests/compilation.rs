@@ -1,5 +1,5 @@
-use simple_c_bundler::bundle;
-use simple_c_bundler::{read_text, write_text};
+use c_source_tools::Build;
+use c_source_tools::{read_text, write_text};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -14,7 +14,7 @@ impl Fixture {
             .unwrap()
             .as_nanos();
         let root = std::env::temp_dir().join(format!(
-            "simple-c-bundler-gcc-{}-{timestamp} 日本語",
+            "c-source-tools-gcc-{}-{timestamp} 日本語",
             std::process::id()
         ));
 
@@ -67,7 +67,10 @@ fn modular_and_bundled_sources_compile_and_preserve_template_output() {
     fixture.put("src/profiles/fixture.c", "int fixture_profile;\n");
 
     let root = &fixture.0;
-    let output = bundle::export(root, "fixture").unwrap();
+    let output = Build::new(root)
+        .unwrap()
+        .bundle(&entries("fixture"), Path::new("dist/fixture.c"))
+        .unwrap();
     assert!(
         !read_text(Path::new(&output.bundle))
             .unwrap()
@@ -83,14 +86,14 @@ fn modular_and_bundled_sources_compile_and_preserve_template_output() {
     for source in &output.sources {
         let object = root.join(format!("objects/{source}.o"));
         fs::create_dir_all(object.parent().unwrap()).unwrap();
-        let local_generated = generated.join(Path::new(&source[4..]).parent().unwrap());
+        let local_generated = generated.join(Path::new(source).parent().unwrap());
 
         checked(
             Command::new(&compiler)
                 .current_dir(root)
                 .args(flags)
                 .arg("-Isrc")
-                .arg(format!("-I{}", generated.display()))
+                .arg(format!("-I{}", generated.join("src").display()))
                 .arg(format!("-I{}", local_generated.display()))
                 .arg("-c")
                 .arg(source)
@@ -157,11 +160,14 @@ fn templates_supply_their_standard_headers_in_modular_and_bundled_sources() {
         ),
     );
     fixture.put("src/profiles/fixture.c", "int fixture_profile;\n");
-    let output = bundle::export(&fixture.0, "fixture").unwrap();
+    let output = Build::new(&fixture.0)
+        .unwrap()
+        .bundle(&entries("fixture"), Path::new("dist/fixture.c"))
+        .unwrap();
     let bundled = read_text(Path::new(&output.bundle)).unwrap();
     assert_eq!(bundled.matches("#include <stdio.h>").count(), 1);
     assert!(
-        read_text(&Path::new(&output.generated_root).join("message.inc"))
+        read_text(&Path::new(&output.generated_root).join("src/message.inc"))
             .unwrap()
             .starts_with("#include <stdio.h>\n")
     );
@@ -180,7 +186,7 @@ fn templates_supply_their_standard_headers_in_modular_and_bundled_sources() {
             Command::new(&compiler)
                 .current_dir(&fixture.0)
                 .args(flags)
-                .arg(format!("-I{}", output.generated_root))
+                .arg(format!("-I{}/src", output.generated_root))
                 .arg(source)
                 .arg("-o")
                 .arg(&executable),
@@ -193,4 +199,8 @@ fn templates_supply_their_standard_headers_in_modular_and_bundled_sources() {
             "plain\n-1 2 3 text\n"
         );
     }
+}
+
+fn entries(name: &str) -> Vec<String> {
+    vec!["src/main.c".into(), format!("src/profiles/{name}.c")]
 }

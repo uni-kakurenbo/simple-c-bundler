@@ -167,11 +167,10 @@ pub fn convert(text: &str) -> Result<String> {
             };
 
             let line = substitute(&line, &block, &mut arguments)?;
-            let escaped = line
-                .replace('\\', "\\\\")
-                .replace('"', "\\\"")
-                .replace('\t', "\\t");
-            literals.push(format!("        \"{escaped}\\n\""));
+            literals.push(format!(
+                "        {}",
+                crate::literal::quote(format!("{line}\n").as_bytes())
+            ));
         }
 
         for (name, _) in &block.parameters {

@@ -1,11 +1,6 @@
-//! C module discovery, declaration-aware name qualification, and typed templates.
-
-pub mod bundle;
-pub mod c_source;
-pub mod modules;
-pub mod templates;
-mod text;
-
-pub use text::{read_text, write_text};
-
-pub type Result<T> = std::result::Result<T, String>;
+//! C generation and bundling through an external GCC-compatible compiler.
+pub mod build;
+pub mod compiler;
+pub use build::{Build, BundleOutput, GeneratedOutput, Settings};
+pub use c_source_bundle::{Result, read_text, write_text};
+pub use c_source_emit::{literal, templates};
