@@ -8,6 +8,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// Include paths, template directories, generated header output, and C assembly recipes.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct Settings {
@@ -28,10 +29,12 @@ impl Default for Settings {
     }
 }
 
+/// Generate project assets and combine reachable C modules into a standalone source.
 pub struct Build {
     pub root: PathBuf,
     pub settings: Settings,
-    /// Inherited process context; artifact-affecting variables belong in Compiler.environment.
+    /// Environment passed to compiler children and excluded from cache keys.
+    /// Put variables that affect generated output in `Compiler::environment`.
     pub environment: BTreeMap<OsString, OsString>,
 }
 
@@ -70,10 +73,12 @@ fn files(directory: &Path, extension: &str, output: &mut Vec<PathBuf>) -> Result
 }
 
 impl Build {
+    /// Use the default include paths and output directory, with no assembly recipes.
     pub fn new(root: &Path) -> Result<Self> {
         Self::with_settings(root, Settings::default())
     }
 
+    /// Validate and use explicit generation settings for the project at `root`.
     pub fn with_settings(root: &Path, mut settings: Settings) -> Result<Self> {
         let project = Project::new(root)?;
         let generated = project.source_path(&settings.generated_root)?;
@@ -144,6 +149,7 @@ impl Build {
         Ok((project, sources))
     }
 
+    /// Resolve entry sources into a dependency graph without generating files.
     pub fn resolve(&self, entries: &[String]) -> Result<Graph> {
         self.inputs()?.0.resolve(entries)
     }
@@ -176,6 +182,7 @@ impl Build {
         Ok((project, generated))
     }
 
+    /// Prepare reachable assets and return the rendered bundle in memory.
     pub fn render(&self, entries: &[String]) -> Result<Rendered> {
         let graph = self.resolve(entries)?;
         let (project, generated) = self.prepare(Some(&graph.generated))?;
@@ -195,10 +202,11 @@ impl Build {
         Ok(root)
     }
 
+    /// Generate all assets and remove stale `.h` and `.inc` files under the generated root.
     pub fn generate(&self) -> Result<GeneratedOutput> {
         let (_, generated) = self.prepare(None)?;
         let root = self.publish(&generated)?;
-        // The generated include directory is owned by this build, not a source directory.
+        // Remove stale .h and .inc outputs from the dedicated generated include directory.
         let expected: BTreeSet<_> = generated.keys().map(|name| root.join(name)).collect();
         for extension in ["inc", "h"] {
             let mut existing = Vec::new();
@@ -219,6 +227,7 @@ impl Build {
         })
     }
 
+    /// Generate reachable includes and write a standalone C source to `output`.
     pub fn bundle(&self, entries: &[String], output: &Path) -> Result<BundleOutput> {
         let rendered = self.render(entries)?;
         let (_, templates) = self.inputs()?;

@@ -1,4 +1,4 @@
-//! Compile through a GCC-compatible command; the tool has no execution-environment dependency.
+//! Compile C assets with a GCC-compatible command and cache assembly using dependency files.
 
 use crate::{Result, read_text, write_text};
 use c_source_bundle::modules::Project;
@@ -10,23 +10,33 @@ use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// Compiler command, cache-relevant environment, and required target triple.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Compiler {
+    /// Executable name on PATH or path to a GCC-compatible compiler.
     pub program: String,
+    /// Arguments placed before each compiler query or compilation command.
     #[serde(default)]
     pub arguments: Vec<String>,
+    /// Environment overrides included in the assembly cache key.
     #[serde(default)]
     pub environment: BTreeMap<String, String>,
+    /// Required result of the compiler's `-dumpmachine` query.
     pub target: String,
 }
 
+/// Compile a C source and expose its assembly through a generated C output function.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Assembly {
+    /// C source path relative to the project root.
     pub source: String,
+    /// Logical header path that C sources include; mirrored under the generated root.
     pub include: String,
+    /// Name of the generated `void function(FILE *output)` C function.
     pub function: String,
+    /// Assembly output path relative to the project root.
     pub output: String,
     #[serde(default)]
     pub flags: Vec<String>,
@@ -89,7 +99,7 @@ impl Compiler {
     }
 }
 
-/// GCC makefile dependency escaping, including continued lines and spaces in names.
+/// Parse GCC dependencies, including escaped spaces, dollar signs, and continued lines.
 fn dependencies(text: &str) -> Result<Vec<String>> {
     let text = text.replace("\\\n", "");
     let (_, body) = text

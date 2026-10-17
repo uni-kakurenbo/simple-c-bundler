@@ -4,7 +4,7 @@ use crate::{Result, read_text};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
-/// No filesystem writes occur until all templates and C bodies are validated.
+/// Bundle text, prepared generated includes, and the resolved module graph.
 pub struct Rendered {
     pub text: String,
     pub generated: BTreeMap<String, String>,

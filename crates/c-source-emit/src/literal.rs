@@ -1,8 +1,9 @@
-//! C11-sized string literals shared by templates and fixed output functions.
+//! Encode byte sequences as C string literals and generate fixed-byte output functions.
 
 use crate::Result;
 use std::fmt::Write;
 
+/// Encode bytes as a quoted C string literal, including NUL and non-UTF-8 bytes.
 pub fn quote(bytes: &[u8]) -> String {
     let mut text = String::from("\"");
     for byte in bytes {
@@ -21,6 +22,7 @@ pub fn quote(bytes: &[u8]) -> String {
     text
 }
 
+/// Generate a `static inline void name(FILE *output)` function that writes `bytes`.
 pub fn function(name: &str, bytes: &[u8]) -> Result<String> {
     let mut chars = name.chars();
     if !chars

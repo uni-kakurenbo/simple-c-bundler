@@ -1,21 +1,27 @@
 # c-source-tools
 
-Generate C output functions, compile C assets to assembly, and combine ordinary C modules into a standalone C source. The CLI and Rust API use the same implementation. No WSLC, container, or execution-platform library is required.
+Generate C output functions, compile C assets to assembly, and combine C modules into a standalone C source. Use the CLI for build scripts or the Rust API to configure generation in code.
 
 ## Install and try
 
-The repository pins Rust 1.99.0. Install the CLI from this checkout:
+Build with the repository's Rust 1.99.0 toolchain. Install the CLI from Git:
 
 ```sh
-cargo install --path . --locked
+cargo install --git https://github.com/uni-kakurenbo/c-source-tools.git --locked
 c-source-tools --help
-c-source-tools bundle --root examples/hello --entry src/main.c --entry src/profiles/demo.c --output dist/hello.c
-gcc -std=c11 -Wall -Wextra -Wpedantic -Werror examples/hello/dist/hello.c -o examples/hello/build/hello
 ```
 
-Create the executable output directory before invoking GCC, and use an `.exe` extension on Windows. The program prints `Hello, world!`.
+To install from a checkout, run `cargo install --path . --locked`. Bundle and compile the included example with a host GCC:
 
-Entry points are explicit: neither `main.c` nor a profile directory is implicit. Local includes discover companion `.c` implementations. Only reachable modules and generated includes enter the bundle. The resulting C source needs neither this tool nor the original project to compile or run.
+```sh
+c-source-tools bundle --root examples/hello --entry src/main.c --entry src/profiles/demo.c --output dist/hello.c
+gcc -std=c11 -Wall -Wextra -Wpedantic -Werror examples/hello/dist/hello.c -o examples/hello/dist/hello
+./examples/hello/dist/hello
+```
+
+The program prints `Hello, world!`. On Windows, GCC adds the `.exe` suffix to the executable.
+
+Pass each entry source with `--entry`. Local includes discover companion `.c` implementations. The bundle contains reachable modules and generated includes and can be compiled as a single C source with a standard compiler.
 
 ## Commands
 
@@ -65,7 +71,7 @@ A recipe invokes a configurable GCC-compatible executable with `-S`; it does not
 
 GCC `-MMD` dependencies track transitive project headers, including C files included into a translation unit. Changes to those inputs, recipe settings, configured compiler environment, target/version identity, or the cached assembly invalidate the cache. Compiler identity is queried even on a cache hit. Pin the toolchain environment or clear cached assembly metadata after changing its system headers independently. Artifact-affecting environment variables belong in `compiler.environment`.
 
-## Rust API and crate boundaries
+## Rust API
 
 ```rust,no_run
 use c_source_tools::Build;
@@ -77,15 +83,19 @@ let result = project.bundle(&entries, Path::new("dist/program.c")).unwrap();
 println!("{}", result.bundle);
 ```
 
-Use `Build::with_settings` for declared C assets or a different layout. `bundle` includes generation; no separate planning or compiler trait implementation is required. `Build.environment` can supply inherited process context, such as a session connection, without changing global environment variables. Semantic compiler configuration belongs in the recipe.
+`Build::new` uses default settings. To load the same JSON configuration as the CLI, deserialize it into `Settings` and pass it to `Build::with_settings`. Use this constructor for assembly recipes or a different project layout.
 
-| Crate | Responsibility | Dependencies on execution environments |
-| --- | --- | --- |
-| `c-source-bundle` | C scanner, module graph, identifier qualification, header expansion | None |
-| `c-source-emit` | Typed templates and fixed-byte C output functions | None |
-| `c-source-tools` | Compiler invocation, dependency cache, generated includes, publication, CLI | External compiler command only |
+`bundle` generates reachable assets and writes the standalone source. `resolve` returns the dependency graph, `render` prepares assets and returns the bundle in memory, and `generate` writes all configured generated includes.
 
-The bundle crate accepts generic registered generated includes. It does not interpret `.asm` or compiler recipes. The emit crate transforms supplied data without starting processes or choosing output directories. The facade discovers templates and connects these pieces.
+Use `Build.environment` for inherited compiler process context, such as session connection variables. These values are excluded from cache keys. Variables that change generated output belong in `Compiler.environment` so changes invalidate the cache.
+
+For individual operations, use these crates:
+
+| Crate | Use it to |
+| --- | --- |
+| `c-source-bundle` | Discover modules, expand headers, and qualify private C identifiers |
+| `c-source-emit` | Convert typed templates or fixed bytes into C output functions |
+| `c-source-tools` | Generate assets, invoke the compiler, cache assembly, and write bundles |
 
 ## Names and supported C
 
@@ -112,10 +122,4 @@ cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 ```
 
-Tests use synthetic modules and templates. GCC integration tests compile modular and standalone forms and compare output. Generation tests cover arbitrary entry points, escaped dependency paths, transitive header changes, cache corruption, unreachable C assets, binary data, and large fixed emitters. Set `CC` to another host GCC-compatible executable for compilation tests. No consuming project or WSLC installation is required by these tests.
-
-## Install from Git
-
-```sh
-cargo install --git https://github.com/uni-kakurenbo/c-source-tools --locked
-```
+GCC integration tests compile modular and standalone forms and compare output. Generation tests cover entry points, escaped dependency paths, transitive header changes, cache corruption, unreachable C assets, binary data, and large fixed emitters. Set `CC` to another host GCC-compatible executable for compilation tests.

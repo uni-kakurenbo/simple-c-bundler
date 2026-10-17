@@ -1,4 +1,4 @@
-//! Compiler-independent C discovery, qualification, and header expansion.
+//! Discover C modules, expand local includes, and qualify private identifiers.
 pub mod bundle;
 pub mod c_source;
 pub mod modules;
